@@ -167,10 +167,28 @@ public:
                  tag, f.stage, f.prevStage, f.stageBlend, f.heavyGrade, f.globalWear,
                  f.coverageRatio, f.panelCount, f.commandCount, f.garmentAttached ? 1 : 0,
                  hits_);
+        int cuts = 0, strips = 0, variants = 0, baseKeep = 0;
+        double cutMax = 0.0;
+        int stripped = 0;
+        for (int i = 0; i < f.commandCount; ++i) {
+            const bw::RenderCommand& c = f.commands[i];
+            if (c.op == bw::RenderOp::CUT_GEOMETRY) ++cuts;
+            else if (c.op == bw::RenderOp::BIND_ADDITIVE_MESH) ++strips;
+            else if (c.op == bw::RenderOp::BIND_DAMAGE_VARIANT) ++variants;
+            else if (strcmp(c.role, "base_keep") == 0) ++baseKeep;
+        }
+        for (int i = 0; i < f.panelCount; ++i) {
+            if (f.panels[i].cutFraction > cutMax) cutMax = f.panels[i].cutFraction;
+            if (f.panels[i].stripped) ++stripped;
+        }
+        WriteLog("          damage : cut=%d strip=%d variant=%d base_keep=%d max_cut=%.3f "
+                 "stripped_panels=%d attached=%d",
+                 cuts, strips, variants, baseKeep, cutMax, stripped,
+                 f.garmentAttached ? 1 : 0);
         for (int i = 0; i < f.commandCount && i < 6; ++i) {
             const bw::RenderCommand& c = f.commands[i];
-            WriteLog("          cmd[%d] op=%d panel=%d role=%s res=%s p0=%.3f p1=%.3f", i,
-                     int(c.op), c.panel, c.role, c.resource, c.p0, c.p1);
+            WriteLog("          cmd[%d] %s panel=%d role=%s res=%s p0=%.3f p1=%.3f",
+                     i, bw::RenderOpName(c.op), c.panel, c.role, c.resource, c.p0, c.p1);
         }
     }
 

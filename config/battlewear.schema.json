@@ -15,9 +15,9 @@
       "additionalProperties": false,
       "properties": {
         "allowGarmentRemoval": { "type": "boolean", "const": false },
-        "minCoverageRatio": { "type": "number", "minimum": 0.70, "maximum": 1.0 },
-        "maxHoleRatioPerPanel": { "type": "number", "exclusiveMinimum": 0, "maximum": 0.35 },
-        "maxTotalLossRatio": { "type": "number", "exclusiveMinimum": 0, "maximum": 0.30 },
+        "minCoverageRatio": { "type": "number", "minimum": 0.35, "maximum": 1.0 },
+        "maxHoleRatioPerPanel": { "type": "number", "exclusiveMinimum": 0, "maximum": 0.70 },
+        "maxTotalLossRatio": { "type": "number", "exclusiveMinimum": 0, "maximum": 0.65 },
         "maxHolesPerPanel": { "type": "integer", "minimum": 1, "maximum": 8 },
         "alwaysBackedByUnderlayer": { "type": "boolean", "const": true },
         "maxStage": { "type": "integer", "const": 3 }
@@ -35,6 +35,7 @@
           "id": { "type": "integer", "minimum": 0 },
           "key": { "type": "string", "minLength": 1 },
           "area": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+          "core": { "type": "boolean" },
           "neighbors": { "type": "array", "items": { "type": "integer", "minimum": 0 } }
         }
       }
@@ -106,16 +107,17 @@
 
     "visual": {
       "type": "object",
-      "required": ["blendSeconds", "wear", "tear", "hole", "genericDecals", "allowedCommands"],
+      "required": ["blendSeconds", "wear", "tear", "hole", "genericDecals", "procedural", "allowedCommands"],
       "properties": {
         "blendSeconds": { "type": "number", "exclusiveMinimum": 0 },
         "wear": { "type": "object" },
         "tear": { "type": "object" },
         "hole": { "type": "object" },
         "genericDecals": { "type": "object" },
+        "procedural": { "type": "object" },
         "allowedCommands": {
           "type": "array",
-          "items": { "type": "string", "enum": ["SET_MATERIAL_PARAM", "ADD_DECAL", "BIND_ADDITIVE_MESH"] },
+          "items": { "type": "string", "enum": ["SET_MATERIAL_PARAM", "ADD_DECAL", "BIND_ADDITIVE_MESH", "CUT_GEOMETRY", "BIND_DAMAGE_VARIANT"] },
           "uniqueItems": true
         }
       }

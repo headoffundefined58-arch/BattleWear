@@ -28,18 +28,14 @@ const char* ViolationName(Violation v) {
         case Violation::TOTAL_LOSS_EXCEEDED: return "TOTAL_LOSS_EXCEEDED";
         case Violation::STAGE_OUT_OF_RANGE: return "STAGE_OUT_OF_RANGE";
         case Violation::FRAME_OVERFLOW: return "FRAME_OVERFLOW";
+        case Violation::CUTOUT_EXCEEDED: return "CUTOUT_EXCEEDED";
+        case Violation::CORE_PIECE_STRIPPED: return "CORE_PIECE_STRIPPED";
+        case Violation::BASE_BINDING_MISSING: return "BASE_BINDING_MISSING";
     }
     return "UNKNOWN";
 }
 
-static const char* OpNameFor(RenderOp op) {
-    switch (op) {
-        case RenderOp::SET_MATERIAL_PARAM: return "SET_MATERIAL_PARAM";
-        case RenderOp::ADD_DECAL: return "ADD_DECAL";
-        case RenderOp::BIND_ADDITIVE_MESH: return "BIND_ADDITIVE_MESH";
-    }
-    return "UNKNOWN";  // anything outside the enum is a forbidden op
-}
+static const char* OpNameFor(RenderOp op) { return RenderOpName(op); }
 
 ValidationReport ValidateFrame(const Config& cfg, const VisualFrame& frame) {
     ValidationReport r;
@@ -52,12 +48,22 @@ ValidationReport ValidateFrame(const Config& cfg, const VisualFrame& frame) {
         Add(r, Violation::COVERAGE_BELOW_MIN);
 
     int n = std::min(frame.panelCount, cfg.panelCount);
+    double cutLoss = 0.0;
+    bool baseBound[kMaxPanels] = {};
+    for (int i = 0; i < frame.commandCount && i < kMaxCommands; ++i) {
+        const RenderCommand& c = frame.commands[i];
+        if (strcmp(c.role, "base_keep") == 0 && c.panel >= 0 && c.panel < kMaxPanels)
+            baseBound[c.panel] = true;
+    }
     for (int i = 0; i < n; ++i) {
         const PanelVisual& v = frame.panels[i];
         if (v.baseMesh[0] == 0) Add(r, Violation::BASE_MESH_MISSING);
         if (v.baseMaterial[0] == 0) Add(r, Violation::BASE_MATERIAL_MISSING);
+        // The base binding command must be present on every panel: the garment is kept
+        // even when a fragment of it has been cut away.
+        if (!baseBound[i]) Add(r, Violation::BASE_BINDING_MISSING);
         double vals[] = {v.dirt, v.roughnessBoost, v.desaturation, v.fray,
-                         v.edgeJitter, v.holeCutout, v.underlayer};
+                         v.edgeJitter, v.holeCutout, v.underlayer, v.cutFraction};
         for (double x : vals) {
             if (Bad(x)) Add(r, Violation::NON_FINITE);
             else if (OutOf01(x)) Add(r, Violation::OUT_OF_RANGE);
@@ -67,6 +73,14 @@ ValidationReport ValidateFrame(const Config& cfg, const VisualFrame& frame) {
         // Every cutout must be backed by a lining fabric of at least equal strength.
         if (v.holeCutout > 0.0 && v.underlayer + 1.0e-9 < v.holeCutout)
             Add(r, Violation::UNDERLAYER_MISSING);
+        // Structural damage is bounded: a single panel can never be cut past the cap, and
+        // the body of the garment (core panels) is never stripped off.
+        if (v.cutFraction > cfg.visual.maxPanelRemoval + 1.0e-9)
+            Add(r, Violation::CUTOUT_EXCEEDED);
+        if (v.stripped && cfg.panels[i].core) Add(r, Violation::CORE_PIECE_STRIPPED);
+        if (static_cast<uint8_t>(v.tearSource) > static_cast<uint8_t>(TearSource::HYBRID))
+            Add(r, Violation::OUT_OF_RANGE);
+        cutLoss += cfg.panels[i].area * v.cutFraction;
         for (uint32_t k = 0; k < v.holeCount && k < kMaxHoles; ++k) {
             const HoleSite& h = v.holes[k];
             if (Bad(h.u) || Bad(h.v) || Bad(h.radius)) Add(r, Violation::NON_FINITE);
@@ -74,10 +88,13 @@ ValidationReport ValidateFrame(const Config& cfg, const VisualFrame& frame) {
                 Add(r, Violation::OUT_OF_RANGE);
         }
     }
+    if (cutLoss > cfg.constraints.maxTotalLossRatio + 1.0e-9)
+        Add(r, Violation::CUTOUT_EXCEEDED);
 
     for (int i = 0; i < frame.commandCount && i < kMaxCommands; ++i) {
         const RenderCommand& c = frame.commands[i];
-        if (c.op > RenderOp::BIND_ADDITIVE_MESH || !cfg.IsCommandAllowed(OpNameFor(c.op)))
+        if (static_cast<int>(c.op) >= kRenderOpCount ||
+            !cfg.IsCommandAllowed(OpNameFor(c.op)))
             Add(r, Violation::FORBIDDEN_RENDER_OP);
         if (c.resource[0] == 0) Add(r, Violation::BASE_MATERIAL_MISSING);
         if (Bad(c.p0) || Bad(c.p1) || Bad(c.p2) || Bad(c.p3)) Add(r, Violation::NON_FINITE);

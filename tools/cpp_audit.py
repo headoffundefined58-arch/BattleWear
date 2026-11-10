@@ -247,6 +247,10 @@ JSON_TO_CPP = {
     "underlayerBoost": "underlayerBoost", "minUVSpacing": "minUVSpacing",
     "radiusMin": "radiusMin", "radiusMax": "radiusMax",
     "maxCutount": "maxCutout",
+    # procedural destruction keys -> C++ field names
+    "cutGeometry": "proceduralCutout", "frayStrips": "proceduralFray",
+    "stripDistalPiece": "proceduralStub",
+    "frayMesh": "procFrayMesh", "cutMesh": "procCutPolygon", "stubMesh": "procStubMesh",
 }
 
 

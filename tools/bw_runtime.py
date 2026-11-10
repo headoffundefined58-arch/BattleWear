@@ -80,9 +80,11 @@ def load_config(path=DEFAULT_CONFIG_PATH):
     # Config-level hard constraints are enforced regardless of file contents.
     c = cfg["constraints"]
     c["allowGarmentRemoval"] = False
+    c["destructionRequiresAssets"] = False
     c["alwaysBackedByUnderlayer"] = True
     c["maxStage"] = 3
-    allowed = {"SET_MATERIAL_PARAM", "ADD_DECAL", "BIND_ADDITIVE_MESH"}
+    allowed = {"SET_MATERIAL_PARAM", "ADD_DECAL", "BIND_ADDITIVE_MESH",
+               "CUT_GEOMETRY", "BIND_DAMAGE_VARIANT"}
     cfg["visual"]["allowedCommands"] = [x for x in cfg["visual"]["allowedCommands"]
                                         if x in allowed]
     panels = cfg["panels"]
@@ -384,6 +386,9 @@ class CostumeRegistry:
             "characterCode": code, "variantId": variant,
             "baseMesh": "auto:whole_garment", "baseMaterial": "auto:whole_garment",
             "dedicated": False, "fallbackUsed": True,
+            # No "starred costume" gate: either source works, both are always available.
+            "destructible": True, "variantMask": 0,
+            "stageVariant": ["", "", "", ""],
             "panels": [{"mesh": "auto:whole_garment", "material": "auto:whole_garment",
                         "uvSet": "uv0", "frayVariant": "", "holeMask": ""} for _ in range(n)],
         }
@@ -399,6 +404,9 @@ class CostumeRegistry:
             h["baseMaterial"] = item.get("baseMaterial", h["baseMaterial"])
             h["dedicated"] = item.get("damageAssets") == "dedicated"
             h["fallbackUsed"] = False
+            for i, name in enumerate(item.get("damageVariants", [])[:3]):
+                h["stageVariant"][i + 1] = name
+                h["variantMask"] |= (1 << (i + 1))
             for p in h["panels"]:
                 p["mesh"], p["material"] = h["baseMesh"], h["baseMaterial"]
             for key, val in item.get("panels", {}).items():
@@ -455,8 +463,12 @@ class VisualMapper:
         grade_boost = 1.0 + 0.12 * m.heavy_grade
         cap = min(m.cons["maxHoleRatioPerPanel"], m.cons["maxTotalLossRatio"])
         decals = vc["genericDecals"]
+        proc = vc["procedural"]
+        cut_budget = m.cons["maxTotalLossRatio"]
         commands, panels = [], []
         for i, (pd, ps, pb) in enumerate(zip(m.panels, m.ps, costume["panels"])):
+            core = bool(pd.get("core"))
+            area = max(1e-6, pd["area"])
             v = {
                 "baseMesh": pb["mesh"] or "auto:whole_garment",
                 "baseMaterial": pb["material"] or "auto:whole_garment",
@@ -478,7 +490,30 @@ class VisualMapper:
                                               vc["hole"]["radiusMin"], vc["hole"]["radiusMax"])})
             v["holes"] = sites
             v["holeCount"] = len(sites)
-            v["useAdditiveFray"] = bool(pb["frayVariant"]) and v["fray"] > 0.02
+
+            # Structural damage: an authored variant is an extra layer, never a requirement.
+            stage_idx = min(m.stage, 3)
+            v["nativeVariant"] = m.stage >= 1 and bool(
+                costume.get("variantMask", 0) & (1 << stage_idx))
+            cut_scale = 1.0 if core else 1.35
+            want = clamp(ps.hole * cut_scale * l3, 0, proc["maxPanelRemoval"])
+            room = max(0.0, cut_budget) / area
+            v["cutFraction"] = clamp(min(want, proc["maxPanelRemoval"], room),
+                                     0, proc["maxPanelRemoval"])
+            cut_budget -= area * v["cutFraction"]
+            v["stripped"] = bool(proc["stripDistalPiece"] and not core and
+                                 ps.tear >= proc["stripTearThreshold"] and
+                                 v["cutFraction"] >= 0.5 * proc["maxPanelRemoval"])
+            procedural_on = proc["cutGeometry"] or proc["frayStrips"]
+            if v["cutFraction"] > 0 or v["fray"] > 0.02:
+                if v["nativeVariant"]:
+                    v["tearSource"] = "HYBRID" if procedural_on else "NATIVE_VARIANT"
+                else:
+                    v["tearSource"] = "PROCEDURAL"
+            else:
+                v["tearSource"] = "NONE"
+
+            v["useAdditiveFray"] = bool(pb["frayVariant"] or proc["frayStrips"]) and v["fray"] > 0.02
             v["useDedicatedHoleMask"] = bool(pb["holeMask"]) and v["holeCutout"] > 0.02
             panels.append(v)
 
@@ -492,15 +527,35 @@ class VisualMapper:
                 self._emit(commands, "ADD_DECAL", i, "fray_edge", decals["fray"],
                            v["fray"], v["edgeJitter"])
                 if v["useAdditiveFray"]:
-                    self._emit(commands, "BIND_ADDITIVE_MESH", i, "fray_strip",
-                               pb["frayVariant"], v["fray"])
+                    strip = pb["frayVariant"] if pb["frayVariant"] else proc["frayMesh"]
+                    self._emit(commands, "BIND_ADDITIVE_MESH", i, "fray_strip", strip,
+                               v["fray"], proc["stripCountPerHole"],
+                               proc["stripLength"], proc["stripDroop"])
+            if v["nativeVariant"]:
+                self._emit(commands, "BIND_DAMAGE_VARIANT", i, "damage_variant",
+                           costume["stageVariant"][stage_idx], m.stage, m.stage_blend,
+                           costume.get("variantMask", 0))
             if v["holeCutout"] > 0.0:
-                mask = pb["holeMask"] if v["useDedicatedHoleMask"] else decals["hole"]
                 for s in sites:
                     self._emit(commands, "ADD_DECAL", i, "underlayer", decals["underlayer"],
                                s["u"], s["v"], s["radius"], v["underlayer"])
-                    self._emit(commands, "ADD_DECAL", i, "hole_mask", mask,
-                               s["u"], s["v"], s["radius"], v["holeCutout"])
+                    if v["useDedicatedHoleMask"]:
+                        self._emit(commands, "ADD_DECAL", i, "hole_mask", pb["holeMask"],
+                                   s["u"], s["v"], s["radius"], v["holeCutout"])
+                    if proc["cutGeometry"]:
+                        role = "cut_polygon" if v["useDedicatedHoleMask"] else "hole_mask"
+                        self._emit(commands, "CUT_GEOMETRY", i, role, proc["cutMesh"],
+                                   s["u"], s["v"],
+                                   s["radius"] * (1.0 + proc["cutJaggedness"]),
+                                   v["cutFraction"])
+                        if proc["stripCountPerHole"] > 0 and v["fray"] > 0.05:
+                            self._emit(commands, "BIND_ADDITIVE_MESH", i, "hole_strip",
+                                       proc["frayMesh"], s["u"], s["v"],
+                                       proc["stripLength"], proc["stripDroop"])
+            if v["stripped"]:
+                self._emit(commands, "BIND_ADDITIVE_MESH", i, "stub_hem", proc["stubMesh"],
+                           v["cutFraction"], proc["stripCountPerHole"],
+                           proc["stripLength"], proc["stripDroop"])
         return {
             "stage": m.stage, "prevStage": m.prev_stage, "stageBlend": m.stage_blend,
             "heavyGrade": m.heavy_grade, "globalWear": m.wear_mean(),
@@ -549,13 +604,18 @@ def validate_frame(cfg, frame):
         errs.append("GARMENT_REMOVED")
     if frame["coverageRatio"] + 1e-9 < cfg["constraints"]["minCoverageRatio"]:
         errs.append("COVERAGE_BELOW_MIN")
-    for v in frame["panels"]:
+    max_removal = cfg["visual"]["procedural"]["maxPanelRemoval"]
+    base_bound = {c["panel"] for c in frame["commands"] if c["role"] == "base_keep"}
+    cut_loss = 0.0
+    for i, v in enumerate(frame["panels"]):
         if not v["baseMesh"]:
             errs.append("BASE_MESH_MISSING")
         if not v["baseMaterial"]:
             errs.append("BASE_MATERIAL_MISSING")
+        if i not in base_bound:
+            errs.append("BASE_BINDING_MISSING")
         for x in (v["dirt"], v["roughnessBoost"], v["desaturation"], v["fray"],
-                  v["edgeJitter"], v["holeCutout"], v["underlayer"]):
+                  v["edgeJitter"], v["holeCutout"], v["underlayer"], v["cutFraction"]):
             if bad(x):
                 errs.append("NON_FINITE")
             elif out01(x):
@@ -564,12 +624,21 @@ def validate_frame(cfg, frame):
             errs.append("UNDERLAYER_MISSING")
         if v["holeCount"] > cfg["constraints"]["maxHolesPerPanel"]:
             errs.append("HOLE_CAP_EXCEEDED")
+        if v["cutFraction"] > max_removal + 1e-9:
+            errs.append("CUTOUT_EXCEEDED")
+        if v["stripped"] and cfg["panels"][i].get("core"):
+            errs.append("CORE_PIECE_STRIPPED")
+        if v["tearSource"] not in ("NONE", "NATIVE_VARIANT", "PROCEDURAL", "HYBRID"):
+            errs.append("OUT_OF_RANGE")
+        cut_loss += cfg["panels"][i]["area"] * v["cutFraction"]
         for s in v["holes"]:
             for x in (s["u"], s["v"], s["radius"]):
                 if bad(x):
                     errs.append("NON_FINITE")
                 elif out01(x):
                     errs.append("OUT_OF_RANGE")
+    if cut_loss > cfg["constraints"]["maxTotalLossRatio"] + 1e-9:
+        errs.append("CUTOUT_EXCEEDED")
     for c in frame["commands"]:
         if c["op"] not in allowed:
             errs.append("FORBIDDEN_RENDER_OP")

@@ -45,14 +45,20 @@ static const int kDefaultNeighbors[10][4] = {
     {1, 2, 3, 4}, {0, 2, 3, 4}, {0, 1, 7, -1}, {0, 1, 5, -1}, {0, 1, 6, -1},
     {3, -1, -1, -1}, {4, -1, -1, -1}, {2, 8, 9, -1}, {7, -1, -1, -1}, {7, -1, -1, -1}
 };
+// Core = the garment body. These panels may be cut open but are never stripped off,
+// so the outfit always stays recognisably on the character.
+static const bool kDefaultCore[10] = {
+    true, true, true, false, false, false, false, true, false, false
+};
 
 Config Config::Defaults() {
     Config c;
 
     c.constraints.allowGarmentRemoval = false;
-    c.constraints.minCoverageRatio = 0.80;
-    c.constraints.maxHoleRatioPerPanel = 0.22;
-    c.constraints.maxTotalLossRatio = 0.18;
+    c.constraints.destructionRequiresAssets = false;   // no "starred costume" gate
+    c.constraints.minCoverageRatio = 0.50;
+    c.constraints.maxHoleRatioPerPanel = 0.42;
+    c.constraints.maxTotalLossRatio = 0.45;
     c.constraints.maxHolesPerPanel = 4;
     c.constraints.alwaysBackedByUnderlayer = true;
     c.constraints.maxStage = 3;
@@ -106,6 +112,7 @@ Config Config::Defaults() {
         p.id = i;
         CopyName(p.key, kDefaultPanelKeys[i], kShortLen);
         p.area = kDefaultPanelAreas[i];
+        p.core = kDefaultCore[i];
         p.neighborCount = 0;
         for (int j = 0; j < 4; ++j) {
             if (kDefaultNeighbors[i][j] >= 0) p.neighbors[p.neighborCount++] = kDefaultNeighbors[i][j];
@@ -141,14 +148,31 @@ Config Config::Defaults() {
     c.visual.radiusMin = 0.045;
     c.visual.radiusMax = 0.115;
     c.visual.growthRadiusGain = 0.055;
+    c.visual.proceduralCutout = true;
+    c.visual.proceduralFray = true;
+    c.visual.proceduralStub = true;
+    c.visual.stripCountPerHole = 4;
+    c.visual.stripLength = 0.24;
+    c.visual.stripWidth = 0.035;
+    c.visual.stripDroop = 0.65;
+    c.visual.maxPanelRemoval = 0.55;
+    c.visual.cutJaggedness = 0.35;
+    c.visual.stripTearThreshold = 0.72;
     CopyName(c.visual.decalWear, "bw/generic/wear_uv");
     CopyName(c.visual.decalSoot, "bw/generic/soot_uv");
     CopyName(c.visual.decalFray, "bw/generic/fray_edge");
     CopyName(c.visual.decalHole, "bw/generic/hole_mask");
     CopyName(c.visual.decalUnderlayer, "bw/generic/underlayer");
-    static const char* ops[3] = {"SET_MATERIAL_PARAM", "ADD_DECAL", "BIND_ADDITIVE_MESH"};
-    c.visual.allowedCommandCount = 3;
-    for (int i = 0; i < 3; ++i) CopyName(c.visual.allowedCommands[i], ops[i], kShortLen);
+    CopyName(c.visual.procFrayMesh, "bw/proc/fray_strip");
+    CopyName(c.visual.procCutPolygon, "bw/proc/cut_polygon");
+    CopyName(c.visual.procStubMesh, "bw/proc/stub_hem");
+    static const char* ops[kRenderOpCount] = {
+        "SET_MATERIAL_PARAM", "ADD_DECAL", "BIND_ADDITIVE_MESH",
+        "CUT_GEOMETRY", "BIND_DAMAGE_VARIANT"
+    };
+    c.visual.allowedCommandCount = kRenderOpCount;
+    for (int i = 0; i < kRenderOpCount; ++i)
+        CopyName(c.visual.allowedCommands[i], ops[i], kShortLen);
 
     return c;
 }
@@ -162,9 +186,12 @@ bool Config::LoadJson(const std::string& text, std::string& error) {
     if (cons) {
         // Hard constraint: removal can never be enabled by config.
         constraints.allowGarmentRemoval = false;
-        constraints.minCoverageRatio = Clamp(Num(*cons, "minCoverageRatio", constraints.minCoverageRatio), 0.70, 1.0);
-        constraints.maxHoleRatioPerPanel = Clamp(Num(*cons, "maxHoleRatioPerPanel", constraints.maxHoleRatioPerPanel), 0.001, 0.35);
-        constraints.maxTotalLossRatio = Clamp(Num(*cons, "maxTotalLossRatio", constraints.maxTotalLossRatio), 0.001, 0.30);
+        // Hard constraint: the "only starred costumes are destructible" gate cannot be
+        // turned back on. Damage never depends on authored assets.
+        constraints.destructionRequiresAssets = false;
+        constraints.minCoverageRatio = Clamp(Num(*cons, "minCoverageRatio", constraints.minCoverageRatio), 0.35, 1.0);
+        constraints.maxHoleRatioPerPanel = Clamp(Num(*cons, "maxHoleRatioPerPanel", constraints.maxHoleRatioPerPanel), 0.001, 0.70);
+        constraints.maxTotalLossRatio = Clamp(Num(*cons, "maxTotalLossRatio", constraints.maxTotalLossRatio), 0.001, 0.65);
         constraints.maxHolesPerPanel = static_cast<int>(Clamp(Int(*cons, "maxHolesPerPanel", constraints.maxHolesPerPanel), 1, kMaxHoles));
         constraints.alwaysBackedByUnderlayer = true;
         constraints.maxStage = 3;
@@ -228,6 +255,7 @@ bool Config::LoadJson(const std::string& text, std::string& error) {
             p.id = Int(item, "id", n);
             Str(item, "key", p.key, kShortLen);
             p.area = Clamp(Num(item, "area", 1.0 / pv->Array().size()), 1.0e-6, 1.0);
+            p.core = Boo(item, "core", p.core);
             p.neighborCount = 0;
             const mj::Value* nb = item.Find("neighbors");
             if (nb && nb->type == mj::Value::Type::Array) {
@@ -307,6 +335,23 @@ bool Config::LoadJson(const std::string& text, std::string& error) {
             Str(*d, "hole", visual.decalHole, kNameLen);
             Str(*d, "underlayer", visual.decalUnderlayer, kNameLen);
         }
+        const mj::Value* pc = vi->Find("procedural");
+        if (pc) {
+            // Damage is generated locally, so a costume with no authored asset still breaks.
+            visual.proceduralCutout = Boo(*pc, "cutGeometry", visual.proceduralCutout);
+            visual.proceduralFray = Boo(*pc, "frayStrips", visual.proceduralFray);
+            visual.proceduralStub = Boo(*pc, "stripDistalPiece", visual.proceduralStub);
+            visual.stripCountPerHole = static_cast<int>(Clamp(Int(*pc, "stripCountPerHole", visual.stripCountPerHole), 0, 8));
+            visual.stripLength = Clamp(Num(*pc, "stripLength", visual.stripLength), 0.01, 1.0);
+            visual.stripWidth = Clamp(Num(*pc, "stripWidth", visual.stripWidth), 0.002, 0.5);
+            visual.stripDroop = Clamp(Num(*pc, "stripDroop", visual.stripDroop), 0.0, 1.0);
+            visual.maxPanelRemoval = Clamp(Num(*pc, "maxPanelRemoval", visual.maxPanelRemoval), 0.05, 0.85);
+            visual.cutJaggedness = Clamp(Num(*pc, "cutJaggedness", visual.cutJaggedness), 0.0, 1.0);
+            visual.stripTearThreshold = Clamp(Num(*pc, "stripTearThreshold", visual.stripTearThreshold), 0.1, 1.0);
+            Str(*pc, "frayMesh", visual.procFrayMesh, kNameLen);
+            Str(*pc, "cutMesh", visual.procCutPolygon, kNameLen);
+            Str(*pc, "stubMesh", visual.procStubMesh, kNameLen);
+        }
         const mj::Value* ops = vi->Find("allowedCommands");
         if (ops && ops->type == mj::Value::Type::Array) {
             int n = 0;
@@ -314,8 +359,10 @@ bool Config::LoadJson(const std::string& text, std::string& error) {
                 if (n >= 8) break;
                 if (x.type != mj::Value::Type::String) continue;
                 const char* s = x.text.c_str();
-                if (strcmp(s, "SET_MATERIAL_PARAM") && strcmp(s, "ADD_DECAL") &&
-                    strcmp(s, "BIND_ADDITIVE_MESH")) continue;   // forbidden ops are dropped
+                bool legit = false;
+                for (int i = 0; i < kRenderOpCount; ++i)
+                    if (!strcmp(s, RenderOpName(static_cast<RenderOp>(i)))) legit = true;
+                if (!legit) continue;   // forbidden ops are dropped
                 CopyName(visual.allowedCommands[n++], s, kShortLen);
             }
             if (n > 0) visual.allowedCommandCount = n;

@@ -7,6 +7,11 @@
 //   * Damage is monotone within one battle: no spontaneous healing / recovery.
 //   * State is decoupled from any fixed costume asset; unknown costume mods use the
 //     generic fallback binding and still receive full graded damage.
+//   * Structural damage does NOT require authored assets: when a costume ships no
+//     damage variant, the tear, the hole and the dangling strips are generated
+//     procedurally. There is no "supported costume" gate.
+//   * Fragments may be cut away (a sleeve can lose its distal half) but the garment
+//     body is never unbound: torso / waist core panels are never stripped.
 //
 // The logic layer has no game/engine dependency. All engine I/O goes through
 // plugin/game_adapter.h, so this core is deterministic and unit-testable.
@@ -27,6 +32,7 @@ constexpr int kMaxHoles = 8;
 constexpr int kMaxHitTypes = 16;
 constexpr int kMaxCommands = 512;
 constexpr int kMaxCostumes = 64;   // registry entries (heap-backed)
+constexpr int kMaxStageVariants = 4;
 constexpr int kNameLen = 128;
 constexpr int kShortLen = 32;
 constexpr double kNoHoleTime = -1.0e9;
@@ -72,10 +78,13 @@ inline double Rand01(uint64_t seed, uint32_t panel, uint32_t site, uint32_t lane
 // ---------------------------------------------------------------- config
 
 struct Constraints {
-    bool  allowGarmentRemoval = false;   // MUST stay false
-    double minCoverageRatio = 0.80;
-    double maxHoleRatioPerPanel = 0.22;
-    double maxTotalLossRatio = 0.18;
+    bool  allowGarmentRemoval = false;        // MUST stay false
+    // MUST stay false: structural damage is generated procedurally, so no costume has to
+    // ship pre-authored damage assets ("starred" costumes) to be destructible.
+    bool  destructionRequiresAssets = false;
+    double minCoverageRatio = 0.50;           // garment body may be torn down to half
+    double maxHoleRatioPerPanel = 0.42;
+    double maxTotalLossRatio = 0.45;
     int   maxHolesPerPanel = 4;
     bool  alwaysBackedByUnderlayer = true;
     int   maxStage = 3;
@@ -122,6 +131,9 @@ struct PanelDef {
     int    id = 0;
     char   key[kShortLen] = {};
     double area = 0.0;
+    // A core panel is the body of the garment (torso / waist). Core panels may be cut but
+    // are never stripped off entirely; limbs and hems may lose their distal piece.
+    bool   core = false;
     int    neighbors[kMaxNeighbors] = {};
     int    neighborCount = 0;
 };
@@ -155,11 +167,25 @@ struct VisualConfig {
     double radiusMin = 0.045;
     double radiusMax = 0.115;
     double growthRadiusGain = 0.055;
+    // --- procedural destruction (no authored asset required on any costume) ---
+    bool   proceduralCutout = true;    // real geometry cut instead of a dark decal
+    bool   proceduralFray = true;      // generated fray strips on every costume
+    bool   proceduralStub = true;      // distal piece (sleeve / hem) may be torn off
+    int    stripCountPerHole = 4;      // dangling cloth strips per hole rim
+    double stripLength = 0.24;         // strip length, panel-relative
+    double stripWidth = 0.035;         // strip width, panel-relative
+    double stripDroop = 0.65;          // 0 = stiff, 1 = hangs fully
+    double maxPanelRemoval = 0.55;     // hard cap of cut-away area on one panel
+    double cutJaggedness = 0.35;       // irregularity of the cut polygon
+    double stripTearThreshold = 0.72;  // tear needed before a panel may be stripped
     char   decalWear[kNameLen] = {};
     char   decalSoot[kNameLen] = {};
     char   decalFray[kNameLen] = {};
     char   decalHole[kNameLen] = {};
     char   decalUnderlayer[kNameLen] = {};
+    char   procFrayMesh[kNameLen] = {};
+    char   procCutPolygon[kNameLen] = {};
+    char   procStubMesh[kNameLen] = {};
     int    allowedCommandCount = 0;
     char   allowedCommands[8][kShortLen] = {};
 };
@@ -291,6 +317,13 @@ struct CostumeHandle {
     char baseMaterial[kNameLen] = {};
     bool dedicated = false;      // true = modder supplied per-panel damage assets
     bool fallbackUsed = false;   // true = generic binding built for an unknown mod
+    // Every costume is destructible. There is deliberately no "supports damage" flag:
+    // when no authored asset exists the damage is generated procedurally.
+    bool destructible = true;
+    // Optional native damage-variant chain shipped by the game / the mod:
+    // stageVariant[1] = "..._dmg01.xfbin", [2] = "..._dmg02.xfbin", ...
+    char     stageVariant[kMaxStageVariants][kNameLen] = {};
+    uint32_t variantMask = 0;    // bit N set = native variant for stage N available
     int  panelCount = 0;
     PanelBinding panels[kMaxPanels];
 };
@@ -319,8 +352,35 @@ private:
 enum class RenderOp : uint8_t {
     SET_MATERIAL_PARAM = 0,   // modify base material params (never replace/remove it)
     ADD_DECAL = 1,            // additive UV-space overlay
-    BIND_ADDITIVE_MESH = 2    // additive fray strip on top of the base mesh
-    // NOTE: there is deliberately NO hide / detach / unload / full-alpha op.
+    BIND_ADDITIVE_MESH = 2,   // additive fray strip / dangling cloth on top of the base mesh
+    CUT_GEOMETRY = 3,         // drop the triangles inside one hole polygon (real opening)
+    BIND_DAMAGE_VARIANT = 4   // bind the native _dmg0N mesh layer over the base mesh
+    // NOTE: there is deliberately NO hide / detach / unload / full-alpha op. CUT_GEOMETRY
+    // removes triangles inside a hole, it never unbinds the garment: the base mesh and the
+    // base material stay bound on every panel in every frame.
+};
+constexpr RenderOp kLastRenderOp = RenderOp::BIND_DAMAGE_VARIANT;
+constexpr int kRenderOpCount = 5;
+
+inline const char* RenderOpName(RenderOp op) {
+    switch (op) {
+        case RenderOp::SET_MATERIAL_PARAM: return "SET_MATERIAL_PARAM";
+        case RenderOp::ADD_DECAL: return "ADD_DECAL";
+        case RenderOp::BIND_ADDITIVE_MESH: return "BIND_ADDITIVE_MESH";
+        case RenderOp::CUT_GEOMETRY: return "CUT_GEOMETRY";
+        case RenderOp::BIND_DAMAGE_VARIANT: return "BIND_DAMAGE_VARIANT";
+    }
+    return "UNKNOWN";
+}
+
+// Where a panel's structural damage comes from. NATIVE_VARIANT = the costume ships a
+// _dmg0N model, PROCEDURAL = BattleWear generates the tear itself. No costume is ever
+// left at NONE once it has taken damage.
+enum class TearSource : uint8_t {
+    NONE = 0,
+    NATIVE_VARIANT = 1,
+    PROCEDURAL = 2,
+    HYBRID = 3
 };
 
 struct RenderCommand {
@@ -341,11 +401,15 @@ struct PanelVisual {
     double edgeJitter = 0.0;
     double holeCutout = 0.0;
     double underlayer = 0.0;             // invariant: >= holeCutout when a hole exists
+    double cutFraction = 0.0;            // geometry actually removed inside holes (0..cap)
     uint32_t holeCount = 0;
     HoleSite holes[kMaxHoles];
     bool   useAdditiveFray = false;
     bool   useDedicatedHoleMask = false;
     bool   fallbackActive = false;
+    bool   nativeVariantActive = false;  // native _dmg0N layer currently bound
+    bool   stripped = false;             // distal piece torn off, stub remains
+    TearSource tearSource = TearSource::NONE;
 };
 
 struct VisualFrame {
@@ -390,7 +454,10 @@ enum class Violation : uint16_t {
     HOLE_CAP_EXCEEDED = 10,
     TOTAL_LOSS_EXCEEDED = 11,
     STAGE_OUT_OF_RANGE = 12,
-    FRAME_OVERFLOW = 13
+    FRAME_OVERFLOW = 13,
+    CUTOUT_EXCEEDED = 14,
+    CORE_PIECE_STRIPPED = 15,
+    BASE_BINDING_MISSING = 16
 };
 
 struct ValidationReport {

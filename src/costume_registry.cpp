@@ -20,6 +20,10 @@ void CostumeRegistry::BuildGeneric(CostumeHandle& out) const {
     CopyName(out.baseMaterial, "auto:whole_garment");
     out.dedicated = false;
     out.fallbackUsed = true;
+    // No "starred costume" gate: a costume with zero authored damage assets is still
+    // fully destructible, the damage is generated procedurally.
+    out.destructible = true;
+    out.variantMask = 0;
     out.panelCount = cfg_.panelCount;
     for (int i = 0; i < cfg_.panelCount; ++i) {
         PanelBinding& b = out.panels[i];
@@ -35,7 +39,11 @@ void CostumeRegistry::BuildGeneric(CostumeHandle& out) const {
 void CostumeRegistry::Register(const CostumeHandle& handle) {
     CostumeHandle h = handle;
     h.fallbackUsed = false;
+    h.destructible = true;   // always, regardless of what the binding file claims
     h.panelCount = cfg_.panelCount;
+    h.variantMask = 0;
+    for (int i = 1; i < kMaxStageVariants; ++i)
+        if (h.stageVariant[i][0] != 0) h.variantMask |= (1u << i);
     // A base binding is mandatory for every panel: the garment always stays attached.
     for (int i = 0; i < cfg_.panelCount; ++i) {
         if (h.panels[i].mesh[0] == 0) CopyName(h.panels[i].mesh, h.baseMesh[0] ? h.baseMesh : "auto:whole_garment");
@@ -86,6 +94,19 @@ bool CostumeRegistry::LoadJson(const std::string& text, std::string& error) {
         v = item.Find("baseMaterial"); if (v) CopyName(h.baseMaterial, v->Text("auto:whole_garment").c_str(), kNameLen);
         v = item.Find("damageAssets");
         h.dedicated = v && v->Text("generic") == "dedicated";
+
+        // Optional native damage-variant chain: ["..._dmg01.xfbin", "..._dmg02.xfbin"].
+        // Its presence only improves fidelity - a costume without it is still destructible.
+        v = item.Find("damageVariants");
+        if (v && v->type == mj::Value::Type::Array) {
+            int k = 0;
+            for (const auto& x : v->Array()) {
+                if (k >= kMaxStageVariants - 1) break;
+                if (x.type != mj::Value::Type::String) continue;
+                CopyName(h.stageVariant[k + 1], x.text.c_str(), kNameLen);
+                ++k;
+            }
+        }
 
         if (h.characterCode[0] == 0) CopyName(h.characterCode, "unknown", kShortLen);
         if (h.variantId[0] == 0) CopyName(h.variantId, "default", kNameLen);

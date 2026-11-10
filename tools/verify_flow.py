@@ -50,6 +50,9 @@ PANEL_KEYS = [p["key"] for p in CFG["panels"]]
 HIT_NAMES = list(CFG["hitTypes"].keys())
 BLUNT, SLASH, PIERCE, HEAT = (HIT_NAMES.index(x) for x in ("blunt", "slash", "pierce", "heat"))
 N = len(PANEL_KEYS)
+# The full render vocabulary. There is deliberately no hide / detach / unload op.
+OPS = frozenset(("SET_MATERIAL_PARAM", "ADD_DECAL", "BIND_ADDITIVE_MESH",
+                 "CUT_GEOMETRY", "BIND_DAMAGE_VARIANT"))
 
 
 class Harness:
@@ -88,7 +91,7 @@ class Harness:
             if v["holeCutout"] > 0 and v["underlayer"] + 1e-9 < v["holeCutout"]:
                 check(False, "cutout backed by lining")
         for c in frame["commands"]:
-            if c["op"] not in ("SET_MATERIAL_PARAM", "ADD_DECAL", "BIND_ADDITIVE_MESH"):
+            if c["op"] not in OPS:
                 check(False, "no forbidden render op")
         self.frames += 1
         if record:
@@ -120,8 +123,7 @@ check(CFG["constraints"]["allowGarmentRemoval"] is False, "garment removal disab
 check(CFG["constraints"]["alwaysBackedByUnderlayer"] is True, "underlayer mandatory")
 check(CFG["constraints"]["maxStage"] == 3, "no removal stage exists")
 check(abs(sum(p["area"] for p in CFG["panels"]) - 1.0) < 1e-9, "panel areas normalized")
-check(set(CFG["visual"]["allowedCommands"]) <=
-      {"SET_MATERIAL_PARAM", "ADD_DECAL", "BIND_ADDITIVE_MESH"}, "render op whitelist")
+check(set(CFG["visual"]["allowedCommands"]) <= OPS, "render op whitelist")
 for p in CFG["panels"]:
     for q in p["neighbors"]:
         check(0 <= q < N and q != p["id"], f"adjacency valid: {p['key']}->{q}")
@@ -413,8 +415,51 @@ g = fresh()
 fg = g.vm.build_frame(g.costume)
 edge("generic fallback never fails to build a frame", len(fg["commands"]) == N)
 edge("no hide/detach/unload/alpha-zero op exists in the frame vocabulary",
-     all(c["op"] in ("SET_MATERIAL_PARAM", "ADD_DECAL", "BIND_ADDITIVE_MESH")
-         for c in fg["commands"]))
+     all(c["op"] in OPS for c in fg["commands"]))
+
+# ================================================================== 8b. no starred-costume gate
+print("== 8b. universal destruction (no starred-costume gate) ==")
+check(CFG["constraints"].get("destructionRequiresAssets", False) is False,
+      "damage never depends on authored assets")
+
+g2 = Harness(code="totally_new_mod_author", variant="costume_v12")
+for i in range(900):
+    g2.step()
+    g2.hit(14.0, 5, PIERCE, True)          # arm_l: a limb, may lose its distal part
+fg2 = g2.vm.build_frame(g2.costume)
+edge("unknown costume with zero authored assets still reaches tearing", g2.m.stage >= 2)
+edge("unknown costume gets real geometry cuts",
+     any(c["op"] == "CUT_GEOMETRY" for c in fg2["commands"]))
+edge("unknown costume gets dangling cloth strips",
+     any(c["role"] in ("fray_strip", "hole_strip", "stub_hem") for c in fg2["commands"]))
+edge("no native variant on this costume -> procedural tear source",
+     all(v["tearSource"] in ("NONE", "PROCEDURAL") for v in fg2["panels"]))
+edge("every panel still emits its base binding",
+     sum(1 for c in fg2["commands"] if c["role"] == "base_keep") == N)
+edge("garment body (core panels) never stripped",
+     not any(v["stripped"] for i, v in enumerate(fg2["panels"])
+             if CFG["panels"][i].get("core")))
+edge("limb panel is the one allowed to lose its distal piece",
+     any(v["stripped"] or v["cutFraction"] > 0 for i, v in enumerate(fg2["panels"])
+         if not CFG["panels"][i].get("core")))
+edge("cut area never exceeds the panel / global budget",
+     sum(CFG["panels"][i]["area"] * v["cutFraction"] for i, v in enumerate(fg2["panels"]))
+     <= CFG["constraints"]["maxTotalLossRatio"] + 1e-9)
+
+# A costume that DOES ship a native _dmg0N chain: bound as an extra layer, not a gate.
+nat = Harness(code="2nrx", variant="sage_mode_road_to_naruto")
+for i in range(400):
+    nat.step()
+    nat.hit(9.0, 0, PIERCE, True)
+fnat = nat.vm.build_frame(nat.costume)
+edge("native variant chain detected on the costume",
+     nat.costume.get("variantMask", 0) != 0)
+edge("native damage variant bound as an additional layer",
+     any(c["op"] == "BIND_DAMAGE_VARIANT" for c in fnat["commands"]))
+edge("native variant never replaces the base binding",
+     sum(1 for c in fnat["commands"] if c["role"] == "base_keep") == N)
+edge("native + procedural = hybrid source",
+     any(v["tearSource"] == "HYBRID" for v in fnat["panels"]))
 
 # physical precursor ordering
 p = fresh()

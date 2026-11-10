@@ -26,6 +26,24 @@
         "torso_front": { "mesh": "7brt_v3_front.nud", "material": "7brt_v3_front.nut", "uv": "front_uv0", "frayVariant": "7brt_v3_front_fray.nud", "holeMask": "bw/7brt_v3/hole_front.dds" },
         "torso_back":  { "mesh": "7brt_v3_back.nud",  "material": "7brt_v3_back.nut",  "uv": "back_uv0",  "frayVariant": "7brt_v3_back_fray.nud",  "holeMask": "bw/7brt_v3/hole_back.dds" }
       }
+    },
+    {
+      "characterCode": "2nrx",
+      "variantId": "sage_mode_road_to_naruto",
+      "costumeMod": "漩涡鸣人 仙人模式 忍者之路限定",
+      "baseMesh": "data/spc/2nrxbod1.xfbin",
+      "baseMaterial": "data/spc/2nrxbod1.xfbin",
+      "damageAssets": "generic",
+      "note": "Ships a native _dmg0N chain. It is bound as an extra layer; the procedural tear still runs, so the result is hybrid.",
+      "damageVariants": [
+        "data/spc/2nrxbod1_dmg01.xfbin",
+        "data/spc/2nrxbod1_dmg02.xfbin",
+        "data/spc/2nrxbod1_dmg03.xfbin"
+      ],
+      "panels": {
+        "torso_front": { "mesh": "data/spc/2nrxbod1.xfbin", "material": "data/spc/2nrxbod1.xfbin", "uv": "uv0" },
+        "torso_back":  { "mesh": "data/spc/2nrxbod1.xfbin", "material": "data/spc/2nrxbod1.xfbin", "uv": "uv0" }
+      }
     }
   ]
 }

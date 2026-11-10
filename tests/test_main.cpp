@@ -109,7 +109,7 @@ struct Harness {
                 Check(false, "hole always backed by underlayer");
         }
         for (int i = 0; i < f.commandCount; ++i)
-            if (f.commands[i].op > RenderOp::BIND_ADDITIVE_MESH)
+            if (static_cast<int>(f.commands[i].op) >= kRenderOpCount)
                 Check(false, "no forbidden render op");
         ++invariantFrames;
         FrameTrace t;
@@ -168,6 +168,10 @@ int main(int argc, char** argv) {
     Check(cfg.IsCommandAllowed("SET_MATERIAL_PARAM"), "material param op allowed");
     Check(cfg.IsCommandAllowed("ADD_DECAL"), "decal op allowed");
     Check(cfg.IsCommandAllowed("BIND_ADDITIVE_MESH"), "additive mesh op allowed");
+    Check(cfg.IsCommandAllowed("CUT_GEOMETRY"), "geometry cut op allowed");
+    Check(cfg.IsCommandAllowed("BIND_DAMAGE_VARIANT"), "damage variant op allowed");
+    Check(!cfg.constraints.destructionRequiresAssets,
+          "destruction never requires authored assets (no starred-costume gate)");
     Check(!cfg.IsCommandAllowed("HIDE_MESH"), "hide mesh op rejected");
     Check(!cfg.IsCommandAllowed("DETACH_COSTUME"), "detach op rejected");
 
@@ -519,6 +523,68 @@ int main(int argc, char** argv) {
         Check(f.garmentAttached, "dedicated costume still always attached");
         for (int i = 0; i < f.panelCount; ++i)
             Check(f.panels[i].baseMesh[0] != 0, "dedicated costume keeps every base mesh");
+    }
+
+    // ------------------------------------------- 14b. universal destruction (no ★ gate)
+    {
+        // A costume that ships no damage asset at all must still break structurally.
+        Harness u(cfg, "totally_new_mod_author", "costume_v12");
+        Check(u.costume.fallbackUsed, "unknown costume falls back to the generic binding");
+        Check(u.costume.destructible, "generic costume is destructible");
+        Check(u.costume.variantMask == 0, "generic costume ships no native variant");
+        for (int i = 0; i < 900; ++i) { u.Step(1.0 / 60.0); u.Hit(14.0, 5, pierce, true); }
+        VisualFrame f; u.mapper.BuildFrame(u.model.State(), u.costume, f);
+        bool cut = false, strip = false;
+        int baseKeep = 0;
+        for (int i = 0; i < f.commandCount; ++i) {
+            if (f.commands[i].op == RenderOp::CUT_GEOMETRY) cut = true;
+            if (f.commands[i].op == RenderOp::BIND_ADDITIVE_MESH ||
+                f.commands[i].op == RenderOp::BIND_DAMAGE_VARIANT) strip = true;
+            if (strcmp(f.commands[i].role, "base_keep") == 0) ++baseKeep;
+        }
+        Check(u.model.State().stage >= 2, "asset-free costume still reaches tearing");
+        Check(cut, "asset-free costume gets real geometry cuts");
+        Check(strip, "asset-free costume gets generated cloth strips");
+        Check(baseKeep == cfg.panelCount, "every panel still emits its base binding");
+        bool coreStripped = false, procSource = true;
+        for (int i = 0; i < f.panelCount; ++i) {
+            if (f.panels[i].stripped && cfg.panels[i].core) coreStripped = true;
+            if (f.panels[i].tearSource != TearSource::NONE &&
+                f.panels[i].tearSource != TearSource::PROCEDURAL) procSource = false;
+        }
+        Check(!coreStripped, "garment body (core panels) is never stripped");
+        Check(procSource, "no native variant -> procedural tear source");
+        CheckReport(ValidateFrame(cfg, f), "asset-free frame invariants");
+    }
+    {
+        // A costume that DOES ship a native _dmg0N chain: bound as an extra layer only.
+        std::string json = "{\"costumes\":[{\"characterCode\":\"2nrx\","
+                           "\"variantId\":\"naruto_road\",\"baseMesh\":\"m\","
+                           "\"baseMaterial\":\"t\",\"damageVariants\":[\"a_dmg01.xfbin\","
+                           "\"a_dmg02.xfbin\",\"a_dmg03.xfbin\"]}]}";
+        CostumeRegistry reg(cfg);
+        std::string err;
+        Check(reg.LoadJson(json, err), "binding file with native variants parses");
+        CostumeHandle ch;
+        reg.Resolve("2nrx", "naruto_road", ch);
+        Check(ch.variantMask == 0xEu, "native variant mask covers stages 1..3");
+        Check(ch.destructible, "costume with native variants is destructible");
+        Harness n(cfg);
+        n.costume = ch;
+        for (int i = 0; i < 400; ++i) { n.Step(1.0 / 60.0); n.Hit(9.0, 0, pierce, true); }
+        VisualFrame f; n.mapper.BuildFrame(n.model.State(), n.costume, f);
+        bool variantBound = false, hybrid = false;
+        int baseKeep = 0;
+        for (int i = 0; i < f.commandCount; ++i) {
+            if (f.commands[i].op == RenderOp::BIND_DAMAGE_VARIANT) variantBound = true;
+            if (strcmp(f.commands[i].role, "base_keep") == 0) ++baseKeep;
+        }
+        for (int i = 0; i < f.panelCount; ++i)
+            if (f.panels[i].tearSource == TearSource::HYBRID) hybrid = true;
+        Check(variantBound, "native damage variant bound as an extra layer");
+        Check(baseKeep == cfg.panelCount, "native variant never replaces the base binding");
+        Check(hybrid, "native + procedural -> hybrid source");
+        CheckReport(ValidateFrame(cfg, f), "native variant frame invariants");
     }
 
     // ---------------------------------------------------------------- 15. stress saturation
