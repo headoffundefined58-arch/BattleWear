@@ -53,6 +53,17 @@ set_target_properties(BattleWear PROPERTIES
     OUTPUT_NAME "BattleWear"
     SUFFIX ".dll")
 
+# --- field loader: dinput8 proxy, dropped straight into the game root -----------
+# NSUNSC.exe imports DINPUT8.dll and it is not a KnownDLL, so this wins the load.
+# 六份转发导出 + 一个工作线程把 core 跑起来；不碰渲染，只写日志。
+add_library(battlewear_loader SHARED loader/dinput8_proxy.cpp plugin/bw_plugin.cpp)
+target_link_libraries(battlewear_loader PRIVATE battlewear_core)
+target_include_directories(battlewear_loader PRIVATE plugin include)
+set_target_properties(battlewear_loader PROPERTIES
+    PREFIX ""
+    OUTPUT_NAME "dinput8"
+    SUFFIX ".dll")
+
 # --- headless conformance driver: same core, full flow + edge cases -------------
 add_executable(bw_tests tests/test_main.cpp)
 target_link_libraries(bw_tests PRIVATE battlewear_core)
@@ -64,7 +75,7 @@ if(MSVC)
 endif()
 
 set(OUTDIR "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
-foreach(t BattleWear battlewear_shared bw_tests)
+foreach(t BattleWear battlewear_shared battlewear_loader bw_tests)
     set_target_properties(${t} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${OUTDIR}"
                                           LIBRARY_OUTPUT_DIRECTORY "${OUTDIR}")
 endforeach()

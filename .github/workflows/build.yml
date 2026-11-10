@@ -108,6 +108,10 @@ jobs:
           foreach ($f in 'BattleWear.dll','BattleWear.pdb','battlewear_shared.dll') {
             if (Test-Path "$bin/$f") { Copy-Item "$bin/$f" dist/BattleWear/ }
           }
+          # dinput8 代理要落在游戏根目录，所以放 dist 顶层而不是 BattleWear/ 里
+          foreach ($f in 'dinput8.dll','dinput8.pdb') {
+            if (Test-Path "$bin/$f") { Copy-Item "$bin/$f" dist/ }
+          }
           if (Test-Path "$bin/BattleWear") {
             Copy-Item -Recurse "$bin/BattleWear" dist/BattleWear/config
           }
