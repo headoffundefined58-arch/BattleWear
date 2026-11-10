@@ -277,6 +277,15 @@ int main(int argc, char** argv) {
         return frames;
     };
 
+    // 阶段刚提交的那一帧 stageBlend = 0，是新层级的交叉淡入起点：此时新层级视觉强度
+    // 为 0（旧层级的贴花仍然在画，所以画面不会"掉档"）。断言稳态表现前先让淡入走完，
+    // 否则测到的是淡入第一帧，必然看不到该层级的贴花。
+    auto SettleFade = [&](int maxFrames) {
+        int n = 0;
+        while (h.model.State().stageBlend < 1.0 && n < maxFrames) { h.Step(1.0 / 60.0); ++n; }
+        return n;
+    };
+
     h.notes.push_back("S1 light abrasion phase");
     int f1 = DriveUntil(1, 6000, 0.85, blunt, 3, false, "S0->S1");
     Check(f1 < 6000, "light abrasion reaches S1 in bounded time");
@@ -291,6 +300,7 @@ int main(int argc, char** argv) {
     Check(h.model.State().stage >= 2, "sharp hits promote to S2 (edge tearing)");
     Check(h.model.TearMean() > 0.10, "tear accumulated");
     Check(h.model.TearPanelCount() >= 2, "tearing is coherent across panels");
+    SettleFade(120);
     {
         VisualFrame f; h.mapper.BuildFrame(h.model.State(), h.costume, f);
         bool anyFray = false, anyWear = false;
@@ -311,6 +321,7 @@ int main(int argc, char** argv) {
     Check(h.model.HoleMean() > 0.0, "cutout area accumulated");
     Check(h.model.State().heavyGrade >= 1, "heavy grade escalated");
     Check(h.model.CoverageRatio() >= cfg.constraints.minCoverageRatio, "coverage still >= 80%");
+    SettleFade(120);
     {
         VisualFrame f; h.mapper.BuildFrame(h.model.State(), h.costume, f);
         int under = 0, cut = 0;
