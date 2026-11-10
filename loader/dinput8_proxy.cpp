@@ -17,7 +17,10 @@
 
 #include <windows.h>
 #include <objbase.h>
-#include <dinput.h>
+// 不引 <dinput.h>：它把导出声明成 __declspec(dllimport)，我们再定义就会撞
+// C2375 (redefinition; different linkage)。这里只需要 REFIID/REFCLSID（objbase
+// 已给）和一个不完整的 DIDATAFORMAT 前向声明。
+struct DIDATAFORMAT;
 
 #include <cstdarg>
 #include <cstdio>
@@ -64,13 +67,12 @@ void WriteLog(const char* fmt, ...) {
 
 // ---------------------------------------------------------------- paths
 
+// 游戏根目录 = 宿主 exe 所在目录（dinput8.dll 必须躺在游戏根目录才会被抢占加载，
+// 所以这两者恒等）。用 exe 路径而不是取自身模块路径，避开函数指针到数据指针的强转
+// ——/permissive- 下那属于 ill-formed。
 std::wstring SelfDir() {
-    HMODULE self = nullptr;
-    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                       reinterpret_cast<LPCWSTR>(&SelfDir), &self);
     wchar_t path[MAX_PATH * 2] = {};
-    DWORD n = GetModuleFileNameW(self, path, MAX_PATH * 2);
+    const DWORD n = GetModuleFileNameW(nullptr, path, MAX_PATH * 2);
     std::wstring s(path, n);
     const size_t cut = s.find_last_of(L"\\/");
     return cut == std::wstring::npos ? std::wstring(L".") : s.substr(0, cut);
@@ -138,8 +140,6 @@ public:
 
     void ApplyFrame(const bw::VisualFrame& f, const bw::CostumeHandle&) override {
         ++frames_;
-        last_ = f;
-        lastValid_ = true;
         if (f.stage != loggedStage_ || f.heavyGrade != loggedGrade_) {
             loggedStage_ = f.stage;
             loggedGrade_ = f.heavyGrade;
@@ -164,10 +164,6 @@ public:
         }
     }
 
-    uint32_t Frames() const { return frames_; }
-    bool HaveFrame() const { return lastValid_; }
-    const bw::VisualFrame& Last() const { return last_; }
-
 private:
     static const uint32_t kMaxScriptedHits = 400;
     LARGE_INTEGER freq_{};
@@ -177,8 +173,6 @@ private:
     uint32_t frames_ = 0;
     uint32_t loggedStage_ = 0xFFFFFFFFu;
     uint32_t loggedGrade_ = 0xFFFFFFFFu;
-    bw::VisualFrame last_;
-    bool lastValid_ = false;
 };
 
 // ---------------------------------------------------------------- worker
@@ -290,8 +284,8 @@ __declspec(dllexport) HRESULT WINAPI DllUnregisterServer(void) {
     return f ? f() : E_FAIL;
 }
 
-__declspec(dllexport) LPCDIDATAFORMAT WINAPI GetdfDIJoystick(void) {
-    using Fn = LPCDIDATAFORMAT(WINAPI*)(void);
+__declspec(dllexport) const DIDATAFORMAT* WINAPI GetdfDIJoystick(void) {
+    using Fn = const DIDATAFORMAT*(WINAPI*)(void);
     Fn f = RealFn<Fn>("GetdfDIJoystick");
     return f ? f() : nullptr;
 }
