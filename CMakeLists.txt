@@ -40,7 +40,9 @@ target_include_directories(battlewear_core PUBLIC include)
 # --- shared core for hot-reload loaders -----------------------------------------
 add_library(battlewear_shared SHARED ${BW_CORE_SOURCES})
 target_include_directories(battlewear_shared PUBLIC include)
-set_target_properties(battlewear_shared PROPERTIES OUTPUT_NAME battlewear)
+# 注意：Windows 文件名不区分大小写，这里不能叫 battlewear.dll —— 会与插件目标
+# BattleWear.dll 撞成同一个文件，两个 target 互抢链接，报 LNK1104。
+set_target_properties(battlewear_shared PROPERTIES OUTPUT_NAME battlewear_shared)
 
 # --- JAPI / ModdingAPI plugin DLL -----------------------------------------------
 add_library(BattleWear SHARED plugin/bw_plugin.cpp)

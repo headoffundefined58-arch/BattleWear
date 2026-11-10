@@ -50,7 +50,14 @@ jobs:
           & cmake -B $env:BUILD_DIR -S . -A x64
           if ($LASTEXITCODE -eq 0) {
             & cmake --build $env:BUILD_DIR --config Release --parallel
-            if ($LASTEXITCODE -eq 0) { $ok = $true }
+            if ($LASTEXITCODE -eq 0) {
+              $ok = $true
+            } else {
+              # 生成器没问题、编不过 = 真实代码错误，换生成器重编只会重演同一个错
+              throw "编译失败（代码错误，不回落 Ninja）"
+            }
+          } else {
+            Write-Host "生成器不可用，转方案 B"
           }
 
           if (-not $ok) {
@@ -98,7 +105,7 @@ jobs:
         run: |
           $bin = "$env:BUILD_DIR/bin/Release"
           New-Item -ItemType Directory -Force -Path dist/BattleWear, dist/reports | Out-Null
-          foreach ($f in 'BattleWear.dll','BattleWear.pdb','battlewear.dll') {
+          foreach ($f in 'BattleWear.dll','BattleWear.pdb','battlewear_shared.dll') {
             if (Test-Path "$bin/$f") { Copy-Item "$bin/$f" dist/BattleWear/ }
           }
           if (Test-Path "$bin/BattleWear") {

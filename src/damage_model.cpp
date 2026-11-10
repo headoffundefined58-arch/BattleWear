@@ -304,7 +304,7 @@ uint32_t DamageModel::ComputeHeavyGrade() const {
     if (holes >= static_cast<uint32_t>(st.grade3_holeCount) ||
         (I >= st.grade3_intensity && t >= st.grade3_tearMean &&
          holes >= static_cast<uint32_t>(st.grade2_holeCount))) g = 3;
-    return Clamp(g, 0, 3);
+    return static_cast<uint32_t>(Clamp(static_cast<double>(g), 0.0, 3.0));
 }
 
 void DamageModel::Tick(double dt) {
