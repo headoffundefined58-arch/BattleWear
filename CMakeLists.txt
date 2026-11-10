@@ -15,6 +15,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(MSVC)
     add_compile_options(/W4 /permissive- /utf-8 /EHsc)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX)
+    # 静态 CRT (/MT)：产物不依赖 vcruntime140/msvcp140，注入游戏进程更稳，
+    # 也不要求使用者装 VC redist。链接期所有目标必须一致，故在此统一定义。
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     # Release 也带 CodeView：崩溃帧可符号化。/FS 必须有，否则并行编译抢 vc143.pdb (C1041)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Zi /FS")
     set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /DEBUG:FULL")

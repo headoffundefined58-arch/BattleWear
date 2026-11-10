@@ -70,11 +70,21 @@ jobs:
           Write-Host "构建成功"
 
       - name: 跑一致性测试（与 Python 参考实现同一套断言）
-        shell: bash
+        shell: pwsh
         run: |
-          set -e
-          ls -la "$BUILD_DIR/bin/Release"
-          "$BUILD_DIR/bin/Release/bw_tests.exe"
+          $exe = Join-Path $PWD "$env:BUILD_DIR/bin/Release/bw_tests.exe"
+          Write-Host "exe: $exe"
+          Get-ChildItem (Split-Path $exe) | Select-Object Name, Length
+          & $exe
+          $rc = $LASTEXITCODE
+          Write-Host "exit=$rc"
+          if ($rc -ne 0) {
+            Write-Host "--- CRT 依赖排查 ---"
+            Get-ChildItem "$env:WINDIR\System32\vcruntime140*.dll",
+                          "$env:WINDIR\System32\msvcp140*.dll" -ErrorAction SilentlyContinue |
+              Select-Object Name, Length
+            throw "bw_tests 退出码 $rc"
+          }
 
       - name: 复核 Python 参考实现与静态审计（防两边分叉）
         shell: bash
