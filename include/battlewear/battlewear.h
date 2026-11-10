@@ -17,6 +17,7 @@
 #include <cstring>
 #include <cmath>
 #include <string>
+#include <vector>
 
 namespace bw {
 
@@ -25,6 +26,7 @@ constexpr int kMaxNeighbors = 12;
 constexpr int kMaxHoles = 8;
 constexpr int kMaxHitTypes = 16;
 constexpr int kMaxCommands = 512;
+constexpr int kMaxCostumes = 64;   // registry entries (heap-backed)
 constexpr int kNameLen = 128;
 constexpr int kShortLen = 32;
 constexpr double kNoHoleTime = -1.0e9;
@@ -304,7 +306,9 @@ public:
     int  FallbackCount() const { return fallbackCount_; }
 private:
     Config cfg_;
-    CostumeHandle entries_[64];
+    // 用 vector 而非 CostumeHandle[64]：单个 CostumeHandle ≈18 KB，64 个 ≈1.1 MB，
+    // 放在栈上会直接撞穿 MSVC 默认 1 MB 栈（0xC00000FD）。注册只在载入期发生，堆分配无妨。
+    std::vector<CostumeHandle> entries_;
     int count_ = 0;
     int fallbackCount_ = 0;
     void BuildGeneric(CostumeHandle& out) const;

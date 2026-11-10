@@ -57,6 +57,11 @@ set_target_properties(BattleWear PROPERTIES
 add_executable(bw_tests tests/test_main.cpp)
 target_link_libraries(bw_tests PRIVATE battlewear_core)
 target_include_directories(bw_tests PRIVATE include)
+if(MSVC)
+    # 测试一次性持有 Config/DamageState/VisualFrame/CostumeHandle 等大对象，
+    # 默认 1 MB 栈太紧，显式放大到 8 MB。
+    set_target_properties(bw_tests PROPERTIES LINK_FLAGS "/STACK:8388608")
+endif()
 
 set(OUTDIR "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
 foreach(t BattleWear battlewear_shared bw_tests)

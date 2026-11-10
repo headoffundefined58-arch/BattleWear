@@ -47,7 +47,11 @@ void CostumeRegistry::Register(const CostumeHandle& handle) {
     for (int i = 0; i < count_; ++i) {
         if (KeyEquals(entries_[i], h.characterCode, h.variantId)) { entries_[i] = h; return; }
     }
-    if (count_ < 64) entries_[count_++] = h;
+    if (count_ < kMaxCostumes) {
+        if (static_cast<int>(entries_.size()) <= count_) entries_.push_back(h);
+        else entries_[count_] = h;
+        ++count_;
+    }
 }
 
 bool CostumeRegistry::Resolve(const char* characterCode, const char* variantId, CostumeHandle& out) {
