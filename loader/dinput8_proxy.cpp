@@ -15,16 +15,26 @@
 //           <game>\BattleWear\config\costume_bindings.json
 // Log:      <game>\BattleWear\bw_load.log
 
+// WIN32_LEAN_AND_MEAN 是必需的：不加的话 windows.h 会连带 objbase.h，那里把
+// DllGetClassObject / DllCanUnloadNow / DirectInput8Create 声明成 DECLSPEC_IMPORT
+// (dllimport)，我们再定义就撞 C2375。代价是 REFIID/REFCLSID 要自己给，
+// 但两者都只是"指向 GUID 的引用"，ABI 与系统头完全一致。
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <objbase.h>
-// 不引 <dinput.h>：它把导出声明成 __declspec(dllimport)，我们再定义就会撞
-// C2375 (redefinition; different linkage)。这里只需要 REFIID/REFCLSID（objbase
-// 已给）和一个不完整的 DIDATAFORMAT 前向声明。
-struct DIDATAFORMAT;
+#include <winerror.h>
 
 #include <cstdarg>
 #include <cstdio>
 #include <string>
+
+struct BwGuid {
+    unsigned long Data1;
+    unsigned short Data2;
+    unsigned short Data3;
+    unsigned char Data4[8];
+};
+using BwRefIid = const BwGuid&;
+struct DIDATAFORMAT;  // 只用作返回值指针，不需要完整定义
 
 #include "battlewear/battlewear.h"
 #include "game_adapter.h"
@@ -251,9 +261,9 @@ Fn RealFn(const char* name) {
 extern "C" {
 
 __declspec(dllexport) HRESULT WINAPI DirectInput8Create(HINSTANCE hinst, DWORD dwVersion,
-                                                        REFIID riidltf, LPVOID* ppvOut,
-                                                        LPUNKNOWN punkOuter) {
-    using Fn = HRESULT(WINAPI*)(HINSTANCE, DWORD, REFIID, LPVOID*, LPUNKNOWN);
+                                                        BwRefIid riidltf, LPVOID* ppvOut,
+                                                        void* punkOuter) {
+    using Fn = HRESULT(WINAPI*)(HINSTANCE, DWORD, BwRefIid, LPVOID*, void*);
     Fn f = RealFn<Fn>("DirectInput8Create");
     if (!f) return E_FAIL;
     return f(hinst, dwVersion, riidltf, ppvOut, punkOuter);
@@ -265,9 +275,9 @@ __declspec(dllexport) HRESULT WINAPI DllCanUnloadNow(void) {
     return f ? f() : S_FALSE;
 }
 
-__declspec(dllexport) HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid,
+__declspec(dllexport) HRESULT WINAPI DllGetClassObject(BwRefIid rclsid, BwRefIid riid,
                                                        LPVOID* ppv) {
-    using Fn = HRESULT(WINAPI*)(REFCLSID, REFIID, LPVOID*);
+    using Fn = HRESULT(WINAPI*)(BwRefIid, BwRefIid, LPVOID*);
     Fn f = RealFn<Fn>("DllGetClassObject");
     return f ? f(rclsid, riid, ppv) : CLASS_E_CLASSNOTAVAILABLE;
 }
