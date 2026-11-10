@@ -31,7 +31,7 @@ static bool Boo(const mj::Value& root, const char* key, bool def) {
 }
 static void Str(const mj::Value& root, const char* key, char* dst, int cap) {
     const mj::Value* v = Get(root, key);
-    if (v && v->type == mj::Value::String) CopyName(dst, v->text.c_str(), cap);
+    if (v && v->type == mj::Value::Type::String) CopyName(dst, v->text.c_str(), cap);
 }
 
 static const char* kDefaultPanelKeys[10] = {
@@ -156,7 +156,7 @@ Config Config::Defaults() {
 bool Config::LoadJson(const std::string& text, std::string& error) {
     mj::Value root;
     if (!mj::Parse(text, root, error)) return false;
-    if (root.type != mj::Value::Object) { error = "root must be an object"; return false; }
+    if (root.type != mj::Value::Type::Object) { error = "root must be an object"; return false; }
 
     const mj::Value* cons = Get(root, "constraints");
     if (cons) {
@@ -200,7 +200,7 @@ bool Config::LoadJson(const std::string& text, std::string& error) {
     }
 
     const mj::Value* ht = Get(root, "hitTypes");
-    if (ht && ht->type == mj::Value::Object) {
+    if (ht && ht->type == mj::Value::Type::Object) {
         int i = 0;
         for (const auto& kv : ht->Object()) {
             if (i >= kMaxHitTypes) break;
@@ -220,7 +220,7 @@ bool Config::LoadJson(const std::string& text, std::string& error) {
     }
 
     const mj::Value* pv = Get(root, "panels");
-    if (pv && pv->type == mj::Value::Array && !pv->Array().empty()) {
+    if (pv && pv->type == mj::Value::Type::Array && !pv->Array().empty()) {
         int n = 0;
         for (const auto& item : pv->Array()) {
             if (n >= kMaxPanels) break;
@@ -230,7 +230,7 @@ bool Config::LoadJson(const std::string& text, std::string& error) {
             p.area = Clamp(Num(item, "area", 1.0 / pv->Array().size()), 1.0e-6, 1.0);
             p.neighborCount = 0;
             const mj::Value* nb = item.Find("neighbors");
-            if (nb && nb->type == mj::Value::Array) {
+            if (nb && nb->type == mj::Value::Type::Array) {
                 for (const auto& x : nb->Array()) {
                     if (p.neighborCount >= kMaxNeighbors) break;
                     int id = x.Integer(-1);
@@ -249,15 +249,15 @@ bool Config::LoadJson(const std::string& text, std::string& error) {
     const mj::Value* st = Get(root, "stages");
     if (st) {
         const mj::Value* names = st->Find("names");
-        if (names && names->type == mj::Value::Array) {
+        if (names && names->type == mj::Value::Type::Array) {
             for (int i = 0; i < 4 && i < static_cast<int>(names->Array().size()); ++i)
-                if (names->Array()[i].type == mj::Value::String)
+                if (names->Array()[i].type == mj::Value::Type::String)
                     CopyName(stages.names[i], names->Array()[i].text.c_str(), kShortLen);
         }
         const mj::Value* labels = st->Find("labels");
-        if (labels && labels->type == mj::Value::Array) {
+        if (labels && labels->type == mj::Value::Type::Array) {
             for (int i = 0; i < 4 && i < static_cast<int>(labels->Array().size()); ++i)
-                if (labels->Array()[i].type == mj::Value::String)
+                if (labels->Array()[i].type == mj::Value::Type::String)
                     CopyName(stages.labels[i], labels->Array()[i].text.c_str(), kShortLen);
         }
         stages.S1_wearMean = Clamp(Num(*st, "S1_wearMean", stages.S1_wearMean), 0.0, 1.0);
@@ -308,11 +308,11 @@ bool Config::LoadJson(const std::string& text, std::string& error) {
             Str(*d, "underlayer", visual.decalUnderlayer, kNameLen);
         }
         const mj::Value* ops = vi->Find("allowedCommands");
-        if (ops && ops->type == mj::Value::Array) {
+        if (ops && ops->type == mj::Value::Type::Array) {
             int n = 0;
             for (const auto& x : ops->Array()) {
                 if (n >= 8) break;
-                if (x.type != mj::Value::String) continue;
+                if (x.type != mj::Value::Type::String) continue;
                 const char* s = x.text.c_str();
                 if (strcmp(s, "SET_MATERIAL_PARAM") && strcmp(s, "ADD_DECAL") &&
                     strcmp(s, "BIND_ADDITIVE_MESH")) continue;   // forbidden ops are dropped

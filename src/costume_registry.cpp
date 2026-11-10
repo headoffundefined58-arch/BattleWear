@@ -71,7 +71,7 @@ bool CostumeRegistry::LoadJson(const std::string& text, std::string& error) {
     mj::Value root;
     if (!mj::Parse(text, root, error)) return false;
     const mj::Value* arr = root.Find("costumes");
-    if (!arr || arr->type != mj::Value::Array) { error = "missing costumes array"; return false; }
+    if (!arr || arr->type != mj::Value::Type::Array) { error = "missing costumes array"; return false; }
 
     for (const auto& item : arr->Array()) {
         CostumeHandle h;
@@ -94,7 +94,7 @@ bool CostumeRegistry::LoadJson(const std::string& text, std::string& error) {
             CopyName(h.panels[i].uvSet, "uv0", kShortLen);
         }
         const mj::Value* panels = item.Find("panels");
-        if (panels && panels->type == mj::Value::Object) {
+        if (panels && panels->type == mj::Value::Type::Object) {
             for (const auto& kv : panels->Object()) {
                 int idx = cfg_.FindPanel(kv.first.c_str());
                 if (idx < 0) continue;
