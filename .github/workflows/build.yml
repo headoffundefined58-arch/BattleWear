@@ -1,5 +1,9 @@
 # BattleWear 云端构建 —— 本机探测判定不可编（无 cl.exe / SDK）时走这条。
 # 纯 C++17 标准库，无 CommonLibSSE / 无 submodule，runner 上直接编。
+#
+# 生成器不写死版本号：runner 镜像的 VS 版本会变（17 2022 → 18 2026 都可能），
+# 写死 "-G Visual Studio 17 2022" 会直接 configure 失败。这里先问 CMake 默认
+# 生成器，失败再用 vcvars + Ninja 兜底。
 
 name: build
 
@@ -18,20 +22,59 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure（VS 生成器自己解析工具链，不要调 vcvars64.bat）
-        run: >
-          cmake -B ${{ env.BUILD_DIR }} -S .
-          -G "Visual Studio 17 2022" -A x64
+      - name: Configure + Build（自动选生成器）
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
 
-      - name: Build
-        run: cmake --build ${{ env.BUILD_DIR }} --config Release --parallel
+          Write-Host "=== 工具链探测 ==="
+          cmake --version | Select-Object -First 1
+          $ninja = Get-Command ninja -ErrorAction SilentlyContinue
+          Write-Host "ninja: $($ninja.Source)"
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vswhere) {
+            Write-Host "--- vswhere -all ---"
+            & $vswhere -all -products * -property installationPath
+            & $vswhere -all -products * -property installationVersion
+          } else {
+            Write-Host "vswhere 不存在"
+          }
+
+          Write-Host "--- CMake 支持的 VS 生成器 ---"
+          (cmake --help) | Select-String -Pattern 'Visual Studio \d+ \d+' | Select-Object -First 8
+
+          $ok = $false
+
+          Write-Host "=== 方案 A：CMake 默认生成器（自动取最新 VS）==="
+          & cmake -B $env:BUILD_DIR -S . -A x64
+          if ($LASTEXITCODE -eq 0) {
+            & cmake --build $env:BUILD_DIR --config Release --parallel
+            if ($LASTEXITCODE -eq 0) { $ok = $true }
+          }
+
+          if (-not $ok) {
+            Write-Host "=== 方案 B：vcvars + Ninja（不依赖生成器版本）==="
+            Remove-Item -Recurse -Force $env:BUILD_DIR -ErrorAction SilentlyContinue
+            $vs = & $vswhere -latest -products * `
+                    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+                    -property installationPath
+            if (-not $vs) { throw "vswhere 找不到带 VC 工具集的 VS 实例" }
+            $vcvars = Join-Path $vs "VC\Auxiliary\Build\vcvars64.bat"
+            Write-Host "vcvars: $vcvars"
+            cmd /c "call `"$vcvars`" && cmake -B $env:BUILD_DIR -S . -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build $env:BUILD_DIR"
+            if ($LASTEXITCODE -eq 0) { $ok = $true }
+          }
+
+          if (-not $ok) { throw "configure/build 两条方案都失败，看上面日志" }
+          Write-Host "构建成功"
 
       - name: 跑一致性测试（与 Python 参考实现同一套断言）
         shell: bash
         run: |
           set -e
-          cd "$BUILD_DIR/bin/Release"
-          ./bw_tests.exe
+          ls -la "$BUILD_DIR/bin/Release"
+          "$BUILD_DIR/bin/Release/bw_tests.exe"
 
       - name: 复核 Python 参考实现与静态审计（防两边分叉）
         shell: bash
@@ -44,12 +87,12 @@ jobs:
         shell: pwsh
         run: |
           $bin = "$env:BUILD_DIR/bin/Release"
-          New-Item -ItemType Directory -Force -Path dist/SKYRIM_DEPLOY, dist/reports | Out-Null
+          New-Item -ItemType Directory -Force -Path dist/BattleWear, dist/reports | Out-Null
           foreach ($f in 'BattleWear.dll','BattleWear.pdb','battlewear.dll') {
-            if (Test-Path "$bin/$f") { Copy-Item "$bin/$f" dist/SKYRIM_DEPLOY/ }
+            if (Test-Path "$bin/$f") { Copy-Item "$bin/$f" dist/BattleWear/ }
           }
           if (Test-Path "$bin/BattleWear") {
-            Copy-Item -Recurse "$bin/BattleWear" dist/SKYRIM_DEPLOY/BattleWear
+            Copy-Item -Recurse "$bin/BattleWear" dist/BattleWear/config
           }
           foreach ($r in 'out/test_report.json','out/flow_trace.json',
                          'out/edge_cases.json','out/cpp_audit.json') {
