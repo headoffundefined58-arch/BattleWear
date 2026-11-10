@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://local/battlewear/battlewear.schema.json",
+  "title": "BattleWear state and visual mapping configuration",
+  "type": "object",
+  "required": ["schemaVersion", "constraints", "panels", "simulation", "hitTypes", "stages", "visual"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "metadata": { "type": "object" },
+
+    "constraints": {
+      "type": "object",
+      "required": ["allowGarmentRemoval", "minCoverageRatio", "maxHoleRatioPerPanel", "maxTotalLossRatio", "maxHolesPerPanel", "alwaysBackedByUnderlayer", "maxStage"],
+      "additionalProperties": false,
+      "properties": {
+        "allowGarmentRemoval": { "type": "boolean", "const": false },
+        "minCoverageRatio": { "type": "number", "minimum": 0.70, "maximum": 1.0 },
+        "maxHoleRatioPerPanel": { "type": "number", "exclusiveMinimum": 0, "maximum": 0.35 },
+        "maxTotalLossRatio": { "type": "number", "exclusiveMinimum": 0, "maximum": 0.30 },
+        "maxHolesPerPanel": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "alwaysBackedByUnderlayer": { "type": "boolean", "const": true },
+        "maxStage": { "type": "integer", "const": 3 }
+      }
+    },
+
+    "panels": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "required": ["id", "key", "area", "neighbors"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 0 },
+          "key": { "type": "string", "minLength": 1 },
+          "area": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+          "neighbors": { "type": "array", "items": { "type": "integer", "minimum": 0 } }
+        }
+      }
+    },
+
+    "simulation": {
+      "type": "object",
+      "required": ["dtMax", "maxHitEnergy", "intensityTauSeconds", "intensityNorm", "fatigueGain", "adjacencyWeight", "wearGain", "tearOnsetWear", "sharpNucleationEnergy", "tearGain", "tearNucleus", "holeOnsetTear", "holeNucleationEnergy", "holeGain", "holeCooldownSeconds", "stageDwellSeconds"],
+      "properties": {
+        "dtMax": { "type": "number", "exclusiveMinimum": 0, "maximum": 0.25 },
+        "energyScale": { "type": "number", "minimum": 0 },
+        "maxHitEnergy": { "type": "number", "exclusiveMinimum": 0 },
+        "intensityTauSeconds": { "type": "number", "exclusiveMinimum": 0 },
+        "intensityNorm": { "type": "number", "exclusiveMinimum": 0 },
+        "fatigueGain": { "type": "number", "minimum": 0 },
+        "adjacencyWeight": { "type": "number", "minimum": 0, "maximum": 1 },
+        "wearGain": { "type": "number", "minimum": 0 },
+        "wearSaturationPower": { "type": "number", "exclusiveMinimum": 0 },
+        "tearOnsetWear": { "type": "number", "minimum": 0, "maximum": 1 },
+        "sharpNucleationEnergy": { "type": "number", "minimum": 0 },
+        "tearGain": { "type": "number", "minimum": 0 },
+        "tearNucleus": { "type": "number", "exclusiveMinimum": 0 },
+        "tearCrackExponent": { "type": "number", "minimum": 0 },
+        "tearEnergyExponent": { "type": "number", "exclusiveMinimum": 0 },
+        "minIntegrity": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "holeOnsetTear": { "type": "number", "minimum": 0, "maximum": 1 },
+        "holeNucleationEnergy": { "type": "number", "minimum": 0 },
+        "holeGain": { "type": "number", "minimum": 0 },
+        "holeNucleus": { "type": "number", "exclusiveMinimum": 0 },
+        "holeGrowthExponent": { "type": "number", "minimum": 0 },
+        "holeCooldownSeconds": { "type": "number", "minimum": 0 },
+        "holeSiteCoherenceGain": { "type": "number", "minimum": 0 },
+        "stageDwellSeconds": { "type": "number", "minimum": 0 },
+        "criticalMultiplier": { "type": "number", "minimum": 1 }
+      }
+    },
+
+    "hitTypes": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["energy", "wear", "tear", "hole", "sharp"],
+        "properties": {
+          "energy": { "type": "number", "minimum": 0 },
+          "wear": { "type": "number", "minimum": 0, "maximum": 1 },
+          "tear": { "type": "number", "minimum": 0, "maximum": 1 },
+          "hole": { "type": "number", "minimum": 0, "maximum": 1 },
+          "sharp": { "type": "boolean" }
+        }
+      }
+    },
+
+    "stages": {
+      "type": "object",
+      "required": ["names", "labels", "S1_wearMean", "S2_tearMean", "S2_tearPanels", "S3_holeCount", "S3_holeMean", "hysteresis", "heavyGrade"],
+      "properties": {
+        "names": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "string" } },
+        "labels": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "string" } },
+        "S1_wearMean": { "type": "number", "minimum": 0, "maximum": 1 },
+        "S2_tearMean": { "type": "number", "minimum": 0, "maximum": 1 },
+        "S2_tearPanels": { "type": "integer", "minimum": 1 },
+        "S3_holeCount": { "type": "integer", "minimum": 1 },
+        "S3_holeMean": { "type": "number", "minimum": 0, "maximum": 1 },
+        "hysteresis": { "type": "number", "minimum": 0, "maximum": 1 },
+        "heavyGrade": { "type": "object" }
+      }
+    },
+
+    "visual": {
+      "type": "object",
+      "required": ["blendSeconds", "wear", "tear", "hole", "genericDecals", "allowedCommands"],
+      "properties": {
+        "blendSeconds": { "type": "number", "exclusiveMinimum": 0 },
+        "wear": { "type": "object" },
+        "tear": { "type": "object" },
+        "hole": { "type": "object" },
+        "genericDecals": { "type": "object" },
+        "allowedCommands": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["SET_MATERIAL_PARAM", "ADD_DECAL", "BIND_ADDITIVE_MESH"] },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

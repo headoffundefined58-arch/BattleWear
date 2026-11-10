@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "metadata": {
+    "name": "BattleWear",
+    "target": "NARUTO X BORUTO ULTIMATE NINJA STORM CONNECTIONS (NUCC / XFBIN / CPK)",
+    "runtime": "C++17 native DLL plugin (JAPI / ModdingAPI)",
+    "hardConstraint": "garment always attached; no removal, no detachment, no exposure"
+  },
+
+  "constraints": {
+    "allowGarmentRemoval": false,
+    "minCoverageRatio": 0.80,
+    "maxHoleRatioPerPanel": 0.22,
+    "maxTotalLossRatio": 0.18,
+    "maxHolesPerPanel": 4,
+    "alwaysBackedByUnderlayer": true,
+    "maxStage": 3
+  },
+
+  "panels": [
+    { "id": 0, "key": "torso_front", "area": 0.16, "neighbors": [1, 2, 3, 4] },
+    { "id": 1, "key": "torso_back",  "area": 0.16, "neighbors": [0, 2, 3, 4] },
+    { "id": 2, "key": "abdomen",     "area": 0.10, "neighbors": [0, 1, 7] },
+    { "id": 3, "key": "shoulder_l",  "area": 0.07, "neighbors": [0, 1, 5] },
+    { "id": 4, "key": "shoulder_r",  "area": 0.07, "neighbors": [0, 1, 6] },
+    { "id": 5, "key": "arm_l",       "area": 0.08, "neighbors": [3] },
+    { "id": 6, "key": "arm_r",       "area": 0.08, "neighbors": [4] },
+    { "id": 7, "key": "hip",         "area": 0.10, "neighbors": [2, 8, 9] },
+    { "id": 8, "key": "leg_l",       "area": 0.09, "neighbors": [7] },
+    { "id": 9, "key": "leg_r",       "area": 0.09, "neighbors": [7] }
+  ],
+
+  "simulation": {
+    "dtMax": 0.10,
+    "energyScale": 1.0,
+    "maxHitEnergy": 25.0,
+    "intensityTauSeconds": 1.20,
+    "intensityNorm": 2.50,
+    "fatigueGain": 0.55,
+    "adjacencyWeight": 0.18,
+    "wearGain": 0.055,
+    "wearSaturationPower": 1.35,
+    "tearOnsetWear": 0.12,
+    "sharpNucleationEnergy": 1.40,
+    "tearGain": 0.030,
+    "tearNucleus": 0.045,
+    "tearCrackExponent": 0.65,
+    "tearEnergyExponent": 0.85,
+    "minIntegrity": 0.28,
+    "holeOnsetTear": 0.32,
+    "holeNucleationEnergy": 2.20,
+    "holeGain": 0.020,
+    "holeNucleus": 0.030,
+    "holeGrowthExponent": 0.55,
+    "holeCooldownSeconds": 0.45,
+    "holeSiteCoherenceGain": 0.35,
+    "stageDwellSeconds": 0.25,
+    "criticalMultiplier": 1.35
+  },
+
+  "hitTypes": {
+    "blunt":  { "energy": 0.70, "wear": 0.85, "tear": 0.13, "hole": 0.02, "sharp": false },
+    "slash":  { "energy": 1.00, "wear": 0.42, "tear": 0.52, "hole": 0.06, "sharp": true  },
+    "pierce": { "energy": 0.90, "wear": 0.22, "tear": 0.26, "hole": 0.52, "sharp": true  },
+    "heat":   { "energy": 1.10, "wear": 0.90, "tear": 0.08, "hole": 0.02, "sharp": false },
+    "chakra": { "energy": 1.00, "wear": 0.55, "tear": 0.32, "hole": 0.13, "sharp": true  }
+  },
+
+  "stages": {
+    "names": ["pristine", "light_wear", "edge_tearing", "local_holes"],
+    "labels": ["完好", "轻微磨损", "边缘撕裂", "局部破洞"],
+    "S1_wearMean": 0.10,
+    "S2_tearMean": 0.16,
+    "S2_tearPanels": 2,
+    "S3_holeCount": 2,
+    "S3_holeMean": 0.045,
+    "hysteresis": 0.80,
+    "heavyGrade": {
+      "grade1_holeCount": 3,
+      "grade2_holeCount": 5,
+      "grade3_holeCount": 8,
+      "grade3_intensity": 0.55,
+      "grade3_tearMean": 0.55
+    }
+  },
+
+  "visual": {
+    "blendSeconds": 0.35,
+    "wear": { "maxDirt": 0.85, "maxRoughness": 0.55, "maxDesaturation": 0.30 },
+    "tear": { "maxFray": 0.95, "maxEdgeJitter": 0.40 },
+    "hole": {
+      "maxCutout": 1.0,
+      "underlayerBoost": 1.0,
+      "minUVSpacing": 0.16,
+      "radiusMin": 0.045,
+      "radiusMax": 0.115,
+      "growthRadiusGain": 0.055
+    },
+    "genericDecals": {
+      "wear": "bw/generic/wear_uv",
+      "soot": "bw/generic/soot_uv",
+      "fray": "bw/generic/fray_edge",
+      "hole": "bw/generic/hole_mask",
+      "underlayer": "bw/generic/underlayer"
+    },
+    "allowedCommands": ["SET_MATERIAL_PARAM", "ADD_DECAL", "BIND_ADDITIVE_MESH"]
+  }
+}

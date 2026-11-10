@@ -1,0 +1,83 @@
+# BattleWear 云端构建 —— 本机探测判定不可编（无 cl.exe / SDK）时走这条。
+# 纯 C++17 标准库，无 CommonLibSSE / 无 submodule，runner 上直接编。
+
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  BUILD_DIR: build
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure（VS 生成器自己解析工具链，不要调 vcvars64.bat）
+        run: >
+          cmake -B ${{ env.BUILD_DIR }} -S .
+          -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build ${{ env.BUILD_DIR }} --config Release --parallel
+
+      - name: 跑一致性测试（与 Python 参考实现同一套断言）
+        shell: bash
+        run: |
+          set -e
+          cd "$BUILD_DIR/bin/Release"
+          ./bw_tests.exe
+
+      - name: 复核 Python 参考实现与静态审计（防两边分叉）
+        shell: bash
+        run: |
+          set -e
+          python tools/verify_flow.py
+          python tools/cpp_audit.py
+
+      - name: 收产物
+        shell: pwsh
+        run: |
+          $bin = "$env:BUILD_DIR/bin/Release"
+          New-Item -ItemType Directory -Force -Path dist/SKYRIM_DEPLOY, dist/reports | Out-Null
+          foreach ($f in 'BattleWear.dll','BattleWear.pdb','battlewear.dll') {
+            if (Test-Path "$bin/$f") { Copy-Item "$bin/$f" dist/SKYRIM_DEPLOY/ }
+          }
+          if (Test-Path "$bin/BattleWear") {
+            Copy-Item -Recurse "$bin/BattleWear" dist/SKYRIM_DEPLOY/BattleWear
+          }
+          foreach ($r in 'out/test_report.json','out/flow_trace.json',
+                         'out/edge_cases.json','out/cpp_audit.json') {
+            if (Test-Path $r) { Copy-Item $r dist/reports/ }
+          }
+          Get-ChildItem -Recurse dist | Select-Object FullName, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BattleWear-win64
+          path: dist
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - name: 打包并上传 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd artifacts
+          zip -r ../BattleWear-win64.zip .
+          cd ..
+          gh release create "$GITHUB_REF_NAME" BattleWear-win64.zip --generate-notes 2>/dev/null || \
+          gh release upload "$GITHUB_REF_NAME" BattleWear-win64.zip --clobber

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "note": "Optional. Any external costume MOD absent from this file is handled by the generic fallback binding and still receives full graded damage. Character codes follow the community convention (prm / prm_load, e.g. 5nrt).",
+  "costumes": [
+    {
+      "characterCode": "5nrt",
+      "variantId": "default",
+      "costumeMod": "vanilla",
+      "baseMesh": "auto:whole_garment",
+      "baseMaterial": "auto:whole_garment",
+      "damageAssets": "generic",
+      "panels": {
+        "torso_front": { "mesh": "auto:whole_garment", "material": "auto:whole_garment", "uv": "auto" },
+        "torso_back":  { "mesh": "auto:whole_garment", "material": "auto:whole_garment", "uv": "auto" },
+        "abdomen":     { "mesh": "auto:whole_garment", "material": "auto:whole_garment", "uv": "auto" }
+      }
+    },
+    {
+      "characterCode": "7brt",
+      "variantId": "community_jacket_v3",
+      "costumeMod": "External Jacket MOD v3",
+      "baseMesh": "cmn/char/7brt/costume_v3/model.xfbin",
+      "baseMaterial": "cmn/char/7brt/costume_v3/material.xfbin",
+      "damageAssets": "dedicated",
+      "panels": {
+        "torso_front": { "mesh": "7brt_v3_front.nud", "material": "7brt_v3_front.nut", "uv": "front_uv0", "frayVariant": "7brt_v3_front_fray.nud", "holeMask": "bw/7brt_v3/hole_front.dds" },
+        "torso_back":  { "mesh": "7brt_v3_back.nud",  "material": "7brt_v3_back.nut",  "uv": "back_uv0",  "frayVariant": "7brt_v3_back_fray.nud",  "holeMask": "bw/7brt_v3/hole_back.dds" }
+      }
+    }
+  ]
+}
