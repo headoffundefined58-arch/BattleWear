@@ -14,7 +14,7 @@ namespace mj {
 
 struct Value {
     enum class Type { Null, Bool, Number, String, Array, Object };
-    Type type = Type::Null;
+    Type type = Value::Type::Null;
     bool boolean = false;
     double number = 0.0;
     std::string text;
@@ -22,17 +22,17 @@ struct Value {
     std::map<std::string, Value> object;
 
     const Value* Find(const std::string& key) const {
-        if (type != Type::Object) return nullptr;
+        if (type != Value::Type::Object) return nullptr;
         auto it = object.find(key);
         return it == object.end() ? nullptr : &it->second;
     }
     bool Has(const std::string& key) const { return Find(key) != nullptr; }
-    double Number(double fallback = 0.0) const { return type == Type::Number ? number : fallback; }
-    bool Bool(bool fallback = false) const { return type == Type::Bool ? boolean : fallback; }
+    double Number(double fallback = 0.0) const { return type == Value::Type::Number ? number : fallback; }
+    bool Bool(bool fallback = false) const { return type == Value::Type::Bool ? boolean : fallback; }
     std::string Text(const std::string& fallback = std::string()) const {
-        return type == Type::String ? text : fallback;
+        return type == Value::Type::String ? text : fallback;
     }
-    int Integer(int fallback = 0) const { return type == Type::Number ? static_cast<int>(number) : fallback; }
+    int Integer(int fallback = 0) const { return type == Value::Type::Number ? static_cast<int>(number) : fallback; }
     const std::vector<Value>& Array() const { return array; }
     const std::map<std::string, Value>& Object() const { return object; }
 };
@@ -80,10 +80,10 @@ private:
         char c = s_[pos_];
         if (c == '{') return ParseObject(out, error);
         if (c == '[') return ParseArray(out, error);
-        if (c == '"') { out.type = Type::String; return ParseString(out.text, error); }
-        if (c == 't') { if (!Literal("true")) { Fail(error, "bad literal"); return false; } out.type = Type::Bool; out.boolean = true; return true; }
-        if (c == 'f') { if (!Literal("false")) { Fail(error, "bad literal"); return false; } out.type = Type::Bool; out.boolean = false; return true; }
-        if (c == 'n') { if (!Literal("null")) { Fail(error, "bad literal"); return false; } out.type = Type::Null; return true; }
+        if (c == '"') { out.type = Value::Type::String; return ParseString(out.text, error); }
+        if (c == 't') { if (!Literal("true")) { Fail(error, "bad literal"); return false; } out.type = Value::Type::Bool; out.boolean = true; return true; }
+        if (c == 'f') { if (!Literal("false")) { Fail(error, "bad literal"); return false; } out.type = Value::Type::Bool; out.boolean = false; return true; }
+        if (c == 'n') { if (!Literal("null")) { Fail(error, "bad literal"); return false; } out.type = Value::Type::Null; return true; }
         if (c == '-' || (c >= '0' && c <= '9')) return ParseNumber(out, error);
         Fail(error, "unexpected character");
         return false;
@@ -102,7 +102,7 @@ private:
             while (pos_ < s_.size() && s_[pos_] >= '0' && s_[pos_] <= '9') ++pos_;
         }
         if (pos_ == start) { Fail(error, "bad number"); return false; }
-        out.type = Type::Number;
+        out.type = Value::Type::Number;
         out.number = std::stod(s_.substr(start, pos_ - start));
         return true;
     }
@@ -176,7 +176,7 @@ private:
     }
     bool ParseArray(Value& out, std::string& error) {
         Eat('[');
-        out.type = Type::Array;
+        out.type = Value::Type::Array;
         SkipWs();
         if (Eat(']')) return true;
         for (;;) {
@@ -191,7 +191,7 @@ private:
     }
     bool ParseObject(Value& out, std::string& error) {
         Eat('{');
-        out.type = Type::Object;
+        out.type = Value::Type::Object;
         SkipWs();
         if (Eat('}')) return true;
         for (;;) {
